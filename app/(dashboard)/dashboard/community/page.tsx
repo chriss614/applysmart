@@ -58,6 +58,7 @@ export default function DashboardCommunityPage() {
         body: JSON.stringify({
           title: newPostTitle,
           content: newPostContent,
+          category: "general",
           tags: newPostTags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });

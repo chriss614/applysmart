@@ -36,11 +36,16 @@ export async function POST(request: NextRequest) {
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
     const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const resetExpires = new Date(Date.now() + 3600000); // 1 hour
 
-    // Store reset token (using a simple approach - in production use a dedicated table)
-    // For now, we'll store it in the user's metadata or use a Redis cache
-    // Since we don't have a password_reset_tokens table, we'll use a simple approach
-    // In a real app, create a password_reset_tokens table
+    // Store reset token hash
+    await db.update(users)
+      .set({
+        passwordResetToken: resetTokenHash,
+        passwordResetExpires: resetExpires,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id));
 
     // Send email
     await sendPasswordResetEmail(user.email, resetToken);

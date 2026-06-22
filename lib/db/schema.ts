@@ -55,6 +55,8 @@ export const users = pgTable(
     emailVerified: boolean("email_verified").default(false).notNull(),
     failedLoginAttempts: integer("failed_login_attempts").default(0),
     lockedUntil: timestamp("locked_until"),
+    passwordResetToken: varchar("password_reset_token", { length: 255 }),
+    passwordResetExpires: timestamp("password_reset_expires"),
     lastLoginAt: timestamp("last_login_at"),
     lastLoginIp: varchar("last_login_ip", { length: 45 }),
     onboardingCompleted: boolean("onboarding_completed").default(false),

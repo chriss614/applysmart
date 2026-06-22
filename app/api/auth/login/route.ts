@@ -3,7 +3,6 @@ import { db } from "@/lib/db";
 import { users, sessions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import {
-  hashPassword,
   verifyPassword,
   createAccessToken,
   createRefreshToken,
@@ -88,12 +87,11 @@ export async function POST(request: NextRequest) {
     });
 
     const refreshToken = await createRefreshToken(user.id);
-    const refreshTokenHash = await hashPassword(refreshToken); // Use bcrypt for hash consistency
 
-    // Store refresh session
+    // Store refresh session (store raw token for direct comparison)
     await db.insert(sessions).values({
       userId: user.id,
-      tokenHash: refreshTokenHash,
+      tokenHash: refreshToken,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       userAgent: request.headers.get("user-agent") || "",
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "",

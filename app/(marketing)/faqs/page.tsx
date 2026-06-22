@@ -11,13 +11,13 @@ export default function FAQsPage() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const allFaqs = FAQ_CATEGORIES.flatMap((cat) =>
-    cat.items.map((item) => ({ ...item, category: cat.category }))
+    cat.questions.map((item) => ({ ...item, category: cat.category }))
   );
 
   const filtered = allFaqs.filter((faq) => {
     const matchesSearch =
-      faq.question.toLowerCase().includes(search.toLowerCase()) ||
-      faq.answer.toLowerCase().includes(search.toLowerCase());
+      faq.q.toLowerCase().includes(search.toLowerCase()) ||
+      faq.a.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = activeCategory === "all" || faq.category === activeCategory;
     return matchesSearch && matchesCategory;
   });
@@ -90,7 +90,7 @@ export default function FAQsPage() {
           <AnimatePresence>
             {filtered.map((faq, index) => (
               <motion.div
-                key={faq.question}
+                key={faq.q}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
@@ -102,7 +102,7 @@ export default function FAQsPage() {
                 >
                   <div className="flex items-center gap-3">
                     <HelpCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                    <span className="font-medium text-slate-900">{faq.question}</span>
+                    <span className="font-medium text-slate-900">{faq.q}</span>
                   </div>
                   <ChevronDown
                     className={`w-5 h-5 text-slate-400 transition-transform ${
@@ -119,8 +119,8 @@ export default function FAQsPage() {
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <div className="px-5 pb-5 pt-0 text-slate-600 leading-relaxed pl-13">
-                        {faq.answer}
+                      <div className="px-5 pb-5 pt-0 pl-12 text-slate-600 leading-relaxed">
+                        {faq.a}
                       </div>
                     </motion.div>
                   )}

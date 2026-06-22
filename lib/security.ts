@@ -48,11 +48,7 @@ export async function createRefreshToken(
   userAgent?: string,
   ipAddress?: string
 ): Promise<string> {
-  const token = crypto.randomBytes(64).toString("hex");
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-  // Store in database via API route
-  return token;
+  return crypto.randomBytes(64).toString("hex");
 }
 
 export async function verifyAccessToken(token: string): Promise<TokenPayload | null> {
@@ -68,10 +64,8 @@ export async function verifyAccessToken(token: string): Promise<TokenPayload | n
   }
 }
 
-export async function verifyRefreshToken(token: string): Promise<number | null> {
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  // Database verification handled in API routes
-  return null;
+export function verifyRefreshToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 //============================================

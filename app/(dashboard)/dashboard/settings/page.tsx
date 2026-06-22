@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   User, Mail, Briefcase, MapPin, DollarSign, Sparkles, Save, Loader2,
@@ -19,6 +19,29 @@ export default function SettingsPage() {
     skills: "",
   });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const res = await fetch("/api/auth/profile", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setProfile({
+            name: data.name || "",
+            email: data.email || "",
+            targetRole: data.targetRole || "",
+            yearsExperience: data.yearsExperience?.toString() || "",
+            preferredLocation: data.preferredLocation || "",
+            salaryExpectation: data.salaryExpectation || "",
+            skills: data.skills?.join(", ") || "",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+      }
+    }
+    fetchProfile();
+  }, []);
 
   async function handleSave() {
     setSaving(true);

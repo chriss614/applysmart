@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -65,14 +66,13 @@ export async function POST(request: NextRequest) {
       plan: newUser.plan,
     });
 
-    const refreshToken = crypto.randomUUID();
-    const refreshTokenHash = await hashPassword(refreshToken);
+    const refreshToken = await createRefreshToken(newUser.id);
 
-    // Store session (import sessions from schema)
+    // Store session
     const { sessions } = await import("@/lib/db/schema");
     await db.insert(sessions).values({
       userId: newUser.id,
-      tokenHash: refreshTokenHash,
+      tokenHash: refreshToken,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       userAgent: request.headers.get("user-agent") || "",
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "",
