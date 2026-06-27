@@ -70,21 +70,21 @@ export default function ApplicationsPage() {
     }
   }
 
-  async function updateStatus(id: number, status: string) {
+  async function toggleFavorite(id: number, currentFavorite: boolean) {
     const csrfToken = document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "";
     try {
       const res = await fetch("/api/applications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
-        body: JSON.stringify({ id, status }),
+        body: JSON.stringify({ id, isFavorite: !currentFavorite }),
       });
 
       if (res.ok) {
-        setApplications((prev) => prev.map((a) => a.id === id ? { ...a, status } : a));
-        toast.success("Status updated");
+        setApplications((prev) => prev.map((a) => a.id === id ? { ...a, isFavorite: !currentFavorite } : a));
+        toast.success(currentFavorite ? "Removed from favorites" : "Added to favorites");
       }
     } catch (error) {
-      toast.error("Failed to update status");
+      toast.error("Failed to update favorite");
     }
   }
 
@@ -163,7 +163,7 @@ export default function ApplicationsPage() {
                           <p className="text-xs text-slate-500">{app.role}</p>
                         </div>
                         <button
-                          onClick={() => updateStatus(app.id, app.isFavorite ? "saved" : "saved")}
+                          onClick={() => toggleFavorite(app.id, !!app.isFavorite)}
                           className="text-slate-300 hover:text-amber-400"
                         >
                           <Star className={`w-4 h-4 ${app.isFavorite ? "fill-amber-400 text-amber-400" : ""}`} />

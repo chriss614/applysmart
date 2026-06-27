@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { communityPosts, communityComments } from "@/lib/db/schema";
+import { communityPosts, users } from "@/lib/db/schema";
 import { eq, desc, count } from "drizzle-orm";
 import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
 import { getUserId } from "@/lib/auth";
@@ -19,12 +19,25 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(communityPosts.category, category));
     }
 
-    const posts = await db.query.communityPosts.findMany({
-      where: conditions.length > 0 ? conditions[0] : undefined,
-      orderBy: desc(communityPosts.createdAt),
-      limit,
-      offset,
-    });
+    const whereClause = conditions.length > 0 ? conditions[0] : undefined;
+
+    const posts = await db
+      .select({
+        id: communityPosts.id,
+        title: communityPosts.title,
+        content: communityPosts.content,
+        author: users.name,
+        tags: communityPosts.tags,
+        upvotes: communityPosts.upvotes,
+        commentCount: communityPosts.commentCount,
+        createdAt: communityPosts.createdAt,
+      })
+      .from(communityPosts)
+      .leftJoin(users, eq(communityPosts.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(communityPosts.createdAt))
+      .limit(limit)
+      .offset(offset);
 
     return NextResponse.json({ posts });
   } catch (error) {

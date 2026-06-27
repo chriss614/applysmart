@@ -18,7 +18,35 @@ export default function SettingsPage() {
     salaryExpectation: "",
     skills: "",
   });
-  const [saving, setSaving] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  async function handlePasswordChange() {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      toast.error("Please fill in both fields");
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      const csrfToken = document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "";
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify(passwordForm),
+      });
+      if (res.ok) {
+        toast.success("Password updated successfully!");
+        setPasswordForm({ currentPassword: "", newPassword: "" });
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update password");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    } finally {
+      setPasswordLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function fetchProfile() {
@@ -66,6 +94,36 @@ export default function SettingsPage() {
       toast.error("Something went wrong");
     } finally {
       setSaving(false);
+    }
+  }
+
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  async function handlePasswordChange() {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      toast.error("Please fill in both fields");
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      const csrfToken = document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "";
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify(passwordForm),
+      });
+      if (res.ok) {
+        toast.success("Password updated successfully!");
+        setPasswordForm({ currentPassword: "", newPassword: "" });
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update password");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    } finally {
+      setPasswordLoading(false);
     }
   }
 
@@ -198,14 +256,32 @@ export default function SettingsPage() {
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Current Password</label>
-                <input type="password" className="input-premium text-sm" placeholder="••••••••" />
+                <input
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  className="input-premium text-sm"
+                  placeholder="••••••••"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">New Password</label>
-                <input type="password" className="input-premium text-sm" placeholder="••••••••" />
+                <input
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  className="input-premium text-sm"
+                  placeholder="••••••••"
+                />
               </div>
             </div>
-            <button className="btn-secondary mt-4 text-sm">Update Password</button>
+            <button
+              onClick={handlePasswordChange}
+              disabled={passwordLoading}
+              className="btn-secondary mt-4 text-sm"
+            >
+              {passwordLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Update Password"}
+            </button>
           </div>
 
           {/* Danger Zone */}

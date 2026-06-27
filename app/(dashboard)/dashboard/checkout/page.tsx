@@ -6,21 +6,30 @@ import {
   Check, ArrowRight, Crown, Zap, Sparkles, Shield, HelpCircle
 } from "lucide-react";
 import { PRICING_PLANS } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function CheckoutPage() {
   const [selectedPlan, setSelectedPlan] = useState("pro");
   const [loading, setLoading] = useState(false);
 
   async function handleCheckout() {
+    if (selectedPlan === "free") return;
     setLoading(true);
     try {
-      const plan = PRICING_PLANS.find((p) => p.name.toLowerCase() === selectedPlan);
-      if (!plan) return;
-
-      // In real app, redirect to Lemon Squeezy checkout
-      window.location.href = plan.href;
+      const csrfToken = document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "";
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+        body: JSON.stringify({ plan: selectedPlan }),
+      });
+      const data = await res.json();
+      if (res.ok && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        toast.error(data.error || "Failed to create checkout");
+      }
     } catch (error) {
-      console.error("Checkout error:", error);
+      toast.error("Checkout failed");
     } finally {
       setLoading(false);
     }

@@ -40,6 +40,8 @@ export default function InterviewPage() {
   const [timeSpent, setTimeSpent] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
 
+  const [sessionId, setSessionId] = useState<number | null>(null);
+
   async function startInterview() {
     if (!jobRole) {
       toast.error("Please enter a job role");
@@ -56,8 +58,9 @@ export default function InterviewPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.questions) {
+      if (res.ok && data.questions && data.sessionId) {
         setQuestions(data.questions);
+        setSessionId(data.sessionId);
         setStep("interview");
         setCurrentQuestion(0);
         setResponse("");
@@ -78,6 +81,10 @@ export default function InterviewPage() {
       toast.error("Please enter your response");
       return;
     }
+    if (!sessionId) {
+      toast.error("Session expired");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -86,7 +93,7 @@ export default function InterviewPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
         body: JSON.stringify({
-          sessionId: 1, // In real app, use actual session ID
+          sessionId,
           questionId: questions[currentQuestion].id,
           response,
         }),
@@ -129,6 +136,7 @@ export default function InterviewPage() {
   function restart() {
     setStep("setup");
     setQuestions([]);
+    setSessionId(null);
     setCurrentQuestion(0);
     setResponse("");
     setFeedback(null);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Briefcase, Search, FileText, MessageSquare, Globe,
@@ -30,7 +30,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.location.href = "/login";
   }
 
-  const isPremium = pathname.includes("/coach") || pathname.includes("/analytics") || pathname.includes("/portfolio");
+  const [user, setUser] = useState<{ name: string; email: string; plan: string } | null>(null);
+
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const res = await fetch("/api/auth/profile", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user:", error);
+      }
+    }
+    fetchUser();
+  }, []);
+
+  const displayName = user?.name || "User";
+  const planLabel = user?.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + " Plan" : "Free Plan";
+  const isPro = user?.plan === "pro" || user?.plan === "accelerator";
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -148,11 +167,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 bg-gradient-to-br from-brand-500 to-accent-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                U
+                {displayName.charAt(0).toUpperCase()}
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-900">User</p>
-                <p className="text-xs text-slate-500">Free Plan</p>
+                <p className="text-sm font-medium text-slate-900">{displayName}</p>
+                <p className="text-xs text-slate-500">{planLabel}</p>
               </div>
             </div>
           </div>
