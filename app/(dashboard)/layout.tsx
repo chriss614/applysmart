@@ -9,6 +9,7 @@ import {
   BarChart3, Sparkles, Users, Settings, Menu, X, ChevronLeft, ChevronRight,
   Bell, Zap, Crown, LogOut
 } from "lucide-react";
+import ThemeToggle from "@/components/ui/theme-toggle";
 import { DASHBOARD_NAV } from "@/lib/utils";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -52,7 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isPro = user?.plan === "pro" || user?.plan === "accelerator";
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
       {/* Mobile overlay */}
       <AnimatePresence>
         {mobileOpen && (
@@ -68,12 +69,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-50 h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300 ${
+        className={`fixed lg:sticky top-0 left-0 z-50 h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300 ${
           collapsed ? "w-[72px]" : "w-[280px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center px-4 border-b border-slate-100">
+        <div className="h-16 flex items-center px-4 border-b border-slate-100 dark:border-slate-800">
           <Link href="/dashboard/overview" className="flex items-center gap-2.5">
             <Sparkles className="w-7 h-7 text-brand-500 shrink-0" />
             {!collapsed && (
@@ -82,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
           <button
             onClick={() => setMobileOpen(false)}
-            className="lg:hidden ml-auto p-2 text-slate-400 hover:text-slate-600"
+            className="lg:hidden ml-auto p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -103,11 +104,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
                     ? "sidebar-active"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
                 } ${isPremiumRoute ? "relative" : ""}`}
                 title={collapsed ? item.label : undefined}
               >
-                <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-brand-600" : "text-slate-400"}`} />
+                <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-brand-600" : "text-slate-400 dark:text-slate-500"}`} />
                 {!collapsed && (
                   <>
                     <span className="flex-1 whitespace-nowrap">{item.label}</span>
@@ -125,10 +126,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Bottom */}
-        <div className="p-3 border-t border-slate-100 space-y-2">
+        <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex w-full items-center gap-3 px-3 py-2 text-slate-500 hover:text-slate-700 text-sm"
+            className="hidden lg:flex w-full items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 text-sm"
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
             {!collapsed && <span>Collapse</span>}
@@ -136,7 +137,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 px-3 py-2 text-slate-500 hover:text-red-600 text-sm rounded-lg hover:bg-red-50 transition-colors"
+            className="flex w-full items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:text-red-600 text-sm rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
           >
             <LogOut className="w-5 h-5" />
             {!collapsed && <span>Sign Out</span>}
@@ -147,20 +148,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main */}
       <div className="flex-1 min-w-0">
         {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 h-16 flex items-center px-4 lg:px-6">
+        <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 h-16 flex items-center px-4 lg:px-6">
           <button
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700"
+            className="lg:hidden p-2 -ml-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
           >
             <Menu className="w-5 h-5" />
           </button>
 
           <div className="ml-auto flex items-center gap-3">
-            <Link href="/dashboard/checkout" className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full">
+            <ThemeToggle />
+
+            <Link href="/dashboard/checkout" className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-full">
               <Zap className="w-3.5 h-3.5" /> Upgrade to Pro
             </Link>
 
-            <button className="relative p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg">
+            <button className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
             </button>
@@ -170,8 +173,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {displayName.charAt(0).toUpperCase()}
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-900">{displayName}</p>
-                <p className="text-xs text-slate-500">{planLabel}</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{displayName}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{planLabel}</p>
               </div>
             </div>
           </div>

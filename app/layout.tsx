@@ -1,3 +1,4 @@
+import { ThemeProvider } from "@/lib/theme";
 import type { Metadata, Viewport } from "next";
 import { Inter, Inter_Tight } from "next/font/google";
 import { Toaster } from "sonner";
@@ -84,16 +85,18 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" dir="ltr" className={`${inter.variable} ${interTight.variable}`}>
+    <html lang="en" dir="ltr" suppressHydrationWarning className={`${inter.variable} ${interTight.variable}`}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className="font-sans antialiased bg-slate-50 text-slate-900">
-        {children}
-        <Toaster position="top-right" richColors closeButton />
-        <Analytics />
-        <SpeedInsights />
+      <body className="font-sans antialiased">
+        <ThemeProvider>
+          {children}
+          <Toaster position="top-right" richColors closeButton />
+          <Analytics />
+          <SpeedInsights />
+        </ThemeProvider>
       </body>
     </html>
   );
