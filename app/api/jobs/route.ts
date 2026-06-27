@@ -4,7 +4,7 @@ import { jobs } from "@/lib/db/schema";
 import { and, eq, gte, lte, ilike, desc, sql, count } from "drizzle-orm";
 import { jobFilterSchema } from "@/lib/validation";
 import { generalRateLimiter } from "@/lib/rate-limit";
-import { getClientIdentifier } from "@/lib/security";
+import { getClientIdentifier, redactedLog } from "@/lib/security";
 
 export async function GET(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const filters = {
+
+    // Validate with Zod schema
+    const rawFilters = {
       query: searchParams.get("query") || undefined,
       skills: searchParams.get("skills")?.split(",").filter(Boolean) || undefined,
       location: searchParams.get("location") || undefined,
@@ -27,6 +29,12 @@ export async function GET(request: NextRequest) {
       limit: Math.min(parseInt(searchParams.get("limit") || "20"), 50),
     };
 
+    const parsed = jobFilterSchema.safeParse(rawFilters);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+    }
+
+    const filters = parsed.data;
     const conditions = [eq(jobs.isActive, true)];
 
     if (filters.query) {
@@ -70,7 +78,7 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(total / filters.limit),
     });
   } catch (error) {
-    console.error("Jobs fetch error:", error);
+    redactedLog("error", "Jobs fetch error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
   }
 }

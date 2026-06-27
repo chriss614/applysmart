@@ -2,16 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { applications, jobs } from "@/lib/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
-import { applicationSchema, applicationUpdateSchema } from "@/lib/validation";
-import { verifyAccessToken, validateCsrfToken, getClientIdentifier } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { generalRateLimiter } from "@/lib/rate-limit";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
+import { applicationSchema, applicationUpdateSchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -46,7 +40,6 @@ export async function GET(request: NextRequest) {
     const totalResult = await db.select({ count: count() }).from(applications).where(eq(applications.userId, userId));
     const total = totalResult[0]?.count || 0;
 
-    // Status breakdown
     const statusCounts = await db
       .select({ status: applications.status, count: count() })
       .from(applications)
@@ -59,7 +52,7 @@ export async function GET(request: NextRequest) {
       statusBreakdown: statusCounts,
     });
   } catch (error) {
-    console.error("Applications fetch error:", error);
+    redactedLog("error", "Applications fetch error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch applications" }, { status: 500 });
   }
 }
@@ -89,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, application: newApp }, { status: 201 });
   } catch (error) {
-    console.error("Application creation error:", error);
+    redactedLog("error", "Application creation error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to create application" }, { status: 500 });
   }
 }
@@ -115,13 +108,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
     }
 
+    // Ownership check: only update if the application belongs to the user
     await db.update(applications)
       .set({ ...parsed.data, updatedAt: new Date() })
       .where(and(eq(applications.id, id), eq(applications.userId, userId)));
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Application update error:", error);
+    redactedLog("error", "Application update error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to update application" }, { status: 500 });
   }
 }

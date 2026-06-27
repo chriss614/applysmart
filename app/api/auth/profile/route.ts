@@ -2,17 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken } from "@/lib/security";
-import { profileUpdateSchema } from "@/lib/validation";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { generalRateLimiter } from "@/lib/rate-limit";
-import { getClientIdentifier } from "@/lib/security";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
+import { profileUpdateSchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -49,7 +42,7 @@ export async function GET(request: NextRequest) {
       emailVerified: user.emailVerified,
     });
   } catch (error) {
-    console.error("Profile fetch error:", error);
+    redactedLog("error", "Profile fetch error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
   }
 }
@@ -68,9 +61,13 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const parsed = profileUpdateSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+      return NextResponse.json(
+        { error: parsed.error.errors[0].message },
+        { status: 400 }
+      );
     }
 
+    // Explicit allow-list via .strict() schema already rejects unexpected fields
     await db.update(users)
       .set({
         ...parsed.data,
@@ -80,7 +77,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Profile update error:", error);
+    redactedLog("error", "Profile update error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
   }
 }

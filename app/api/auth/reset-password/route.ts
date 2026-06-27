@@ -2,28 +2,49 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { hashPassword, validateCsrfToken } from "@/lib/security";
-import crypto from "crypto";
+import {
+  hashPassword,
+  hashPasswordResetToken,
+  validateCsrfToken,
+  getClientIdentifier,
+  redactedLog,
+} from "@/lib/security";
+import { passwordResetRateLimiter } from "@/lib/rate-limit";
+import { passwordResetSchema } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
+  const identifier = getClientIdentifier(request);
+  const { success: rateLimitSuccess } = await passwordResetRateLimiter.limit(identifier);
+  if (!rateLimitSuccess) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   if (!validateCsrfToken(request)) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   try {
-    const { token, password } = await request.json();
-    if (!token || !password || password.length < 8) {
-      return NextResponse.json({ error: "Invalid token or password" }, { status: 400 });
+    const body = await request.json();
+    const parsed = passwordResetSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.errors[0].message },
+        { status: 400 }
+      );
     }
 
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const { token, password } = parsed.data;
+    const tokenHash = hashPasswordResetToken(token);
 
     const user = await db.query.users.findFirst({
       where: eq(users.passwordResetToken, tokenHash),
     });
 
     if (!user) {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid or expired token" },
+        { status: 400 }
+      );
     }
 
     if (!user.passwordResetExpires || new Date() > user.passwordResetExpires) {
@@ -32,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
+    // Single-use: invalidate token immediately after use
     await db.update(users)
       .set({
         passwordHash,
@@ -41,9 +63,12 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(users.id, user.id));
 
-    return NextResponse.json({ success: true, message: "Password updated successfully." });
+    return NextResponse.json({
+      success: true,
+      message: "Password updated successfully. Please log in with your new password.",
+    });
   } catch (error) {
-    console.error("Reset password error:", error);
+    redactedLog("error", "Reset password error", { error: "Internal server error" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

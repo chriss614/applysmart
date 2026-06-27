@@ -2,23 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { interviewSessions } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken, getClientIdentifier } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId, getUserPlan } from "@/lib/auth";
 import { aiRateLimiter } from "@/lib/rate-limit";
-import { safeAiCall, INTERVIEW_FEEDBACK_PROMPT } from "@/lib/ai/openai";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
-
-async function getUserPlan(request: NextRequest): Promise<string> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return "free";
-  const payload = await verifyAccessToken(token);
-  return payload?.plan || "free";
-}
+import { safeAiCallWithValidation, INTERVIEW_FEEDBACK_PROMPT } from "@/lib/ai/openai";
+import { interviewFeedbackResultSchema, interviewResponseSchema } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   if (!validateCsrfToken(request)) {
@@ -38,12 +26,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { sessionId, questionId, response } = await request.json();
-    if (!sessionId || !questionId || !response) {
-      return NextResponse.json({ error: "Session ID, question ID, and response required" }, { status: 400 });
+    const body = await request.json();
+    const parsed = interviewResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
     }
 
-    // Get session
+    const { sessionId, questionId, response } = parsed.data;
+
+    // Get session with ownership check (IDOR fix)
     const session = await db.query.interviewSessions.findFirst({
       where: and(eq(interviewSessions.id, sessionId), eq(interviewSessions.userId, userId)),
     });
@@ -58,16 +49,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Question not found" }, { status: 404 });
     }
 
-    const result = await safeAiCall<{
-      score: number;
-      strengths: string[];
-      areasToImprove: string[];
-      modelAnswer: string;
-      followUpQuestions: string[];
-    }>(
+    const result = await safeAiCallWithValidation(
       INTERVIEW_FEEDBACK_PROMPT,
       `Question: ${question.question}\n\nCandidate Response: ${response}\n\nExpected points: ${question.expectedPoints?.join("\n") || "N/A"}`,
-      "You are a supportive but honest technical interviewer. Evaluate the candidate's response and provide constructive feedback."
+      interviewFeedbackResultSchema
     );
 
     if (!result) {
@@ -88,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, feedback: result });
   } catch (error) {
-    console.error("Interview submit error:", error);
+    redactedLog("error", "Interview submit error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to submit response" }, { status: 500 });
   }
 }

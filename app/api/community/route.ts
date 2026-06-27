@@ -2,16 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { communityPosts, communityComments } from "@/lib/db/schema";
 import { eq, desc, count } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken, getClientIdentifier } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { communityRateLimiter } from "@/lib/rate-limit";
-import { communityPostSchema } from "@/lib/validation";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
+import { communityPostSchema, communityCommentSchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ posts });
   } catch (error) {
-    console.error("Community fetch error:", error);
+    redactedLog("error", "Community fetch error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch posts" }, { status: 500 });
   }
 }
@@ -69,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, post }, { status: 201 });
   } catch (error) {
-    console.error("Community post error:", error);
+    redactedLog("error", "Community post error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to create post" }, { status: 500 });
   }
 }

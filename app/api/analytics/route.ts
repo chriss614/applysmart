@@ -2,16 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { analytics, applications, interviewSessions, resumes } from "@/lib/db/schema";
 import { eq, desc, gte, sql, and, count, avg } from "drizzle-orm";
-import { verifyAccessToken } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { generalRateLimiter } from "@/lib/rate-limit";
-import { getClientIdentifier } from "@/lib/security";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
+import { getClientIdentifier, redactedLog } from "@/lib/security";
 
 export async function GET(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -26,7 +19,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Get today's analytics
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -34,7 +26,6 @@ export async function GET(request: NextRequest) {
       where: and(eq(analytics.userId, userId), gte(analytics.date, today)),
     });
 
-    // Get application stats
     const appStats = await db
       .select({ status: applications.status, count: count() })
       .from(applications)
@@ -46,7 +37,6 @@ export async function GET(request: NextRequest) {
     const offersReceived = appStats.find((s) => s.status === "offer")?.count || 0;
     const interviewsScheduled = appStats.filter((s) => ["phone_screen", "technical", "onsite"].includes(s.status)).reduce((sum, s) => sum + s.count, 0);
 
-    // Get resume stats
     const resumeStats = await db
       .select({ avgScore: avg(resumes.atsScore) })
       .from(resumes)
@@ -54,7 +44,6 @@ export async function GET(request: NextRequest) {
 
     const avgAtsScore = resumeStats[0]?.avgScore ? Math.round(Number(resumeStats[0].avgScore)) : 0;
 
-    // Get interview stats
     const interviewStats = await db
       .select({ avgScore: avg(interviewSessions.overallScore) })
       .from(interviewSessions)
@@ -62,7 +51,6 @@ export async function GET(request: NextRequest) {
 
     const avgInterviewScore = interviewStats[0]?.avgScore ? Math.round(Number(interviewStats[0].avgScore)) : 0;
 
-    // Get last 30 days of activity
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dailyActivity = await db
       .select({
@@ -91,7 +79,7 @@ export async function GET(request: NextRequest) {
       statusBreakdown: appStats,
     });
   } catch (error) {
-    console.error("Analytics error:", error);
+    redactedLog("error", "Analytics error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch analytics" }, { status: 500 });
   }
 }

@@ -2,19 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
 import { eq, and, gt } from "drizzle-orm";
-import { createAccessToken, verifyRefreshToken, COOKIE_OPTIONS } from "@/lib/security";
+import {
+  createAccessToken,
+  hashRefreshToken,
+  COOKIE_OPTIONS,
+  validateCsrfToken,
+  getClientIdentifier,
+  redactedLog,
+} from "@/lib/security";
+import { refreshRateLimiter } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  // CSRF protection for refresh (state-changing cookie operation)
+  if (!validateCsrfToken(request)) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  // Rate limit
+  const identifier = getClientIdentifier(request);
+  const { success: rateLimitSuccess } = await refreshRateLimiter.limit(identifier);
+  if (!rateLimitSuccess) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   try {
-    const refreshToken = request.cookies.get("refresh_token")?.value;
-    if (!refreshToken) {
+    const rawRefreshToken = request.cookies.get("refresh_token")?.value;
+    if (!rawRefreshToken) {
       return NextResponse.json({ error: "No refresh token" }, { status: 401 });
     }
 
-    // Find valid session
+    const tokenHash = hashRefreshToken(rawRefreshToken);
+
+    // Find valid session by hashed token
     const session = await db.query.sessions.findFirst({
       where: and(
-        eq(sessions.tokenHash, refreshToken),
+        eq(sessions.tokenHash, tokenHash),
         gt(sessions.expiresAt, new Date()),
         eq(sessions.revoked, false)
       ),
@@ -34,7 +56,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 401 });
     }
 
-    // Create new access token
     const accessToken = await createAccessToken({
       userId: user.id,
       email: user.email,
@@ -47,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Refresh error:", error);
+    redactedLog("error", "Refresh token error", { error: "Internal server error" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

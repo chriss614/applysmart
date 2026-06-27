@@ -2,23 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { coachMessages } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken, getClientIdentifier, detectPromptInjection } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog, detectPromptInjection } from "@/lib/security";
+import { getUserId, getUserPlan } from "@/lib/auth";
 import { aiRateLimiter } from "@/lib/rate-limit";
-import { safeAiCall, COACH_SYSTEM_PROMPT } from "@/lib/ai/openai";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
-
-async function getUserPlan(request: NextRequest): Promise<string> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return "free";
-  const payload = await verifyAccessToken(token);
-  return payload?.plan || "free";
-}
+import { safeAiCallWithValidation, COACH_SYSTEM_PROMPT } from "@/lib/ai/openai";
+import { coachMessageSchema, coachResponseSchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
@@ -35,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ messages: messages.reverse() });
   } catch (error) {
-    console.error("Coach history error:", error);
+    redactedLog("error", "Coach history error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 });
   }
 }
@@ -58,14 +46,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { message, context } = await request.json();
-    if (!message || message.length < 1) {
-      return NextResponse.json({ error: "Message required" }, { status: 400 });
+    const body = await request.json();
+    const parsed = coachMessageSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
     }
 
-    // Detect prompt injection
+    const { message, context } = parsed.data;
+
+    // Detect prompt injection (logging signal only, not a security boundary)
     if (detectPromptInjection(message)) {
-      return NextResponse.json({ error: "Invalid message content" }, { status: 400 });
+      redactedLog("warn", "Prompt injection detected in coach message", { userId });
     }
 
     // Store user message
@@ -73,7 +64,7 @@ export async function POST(request: NextRequest) {
       userId,
       role: "user",
       content: message,
-      context,
+      context: context || {},
     });
 
     // Get recent context for AI
@@ -88,10 +79,11 @@ export async function POST(request: NextRequest) {
       content: m.content,
     }));
 
-    // Call AI
-    const response = await safeAiCall<{ response: string }>(
+    // Call AI with Zod validation
+    const response = await safeAiCallWithValidation(
       "",
       message,
+      coachResponseSchema,
       COACH_SYSTEM_PROMPT + `\n\nUser context: ${JSON.stringify(context)}\n\nRecent conversation:\n${conversationHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}`
     );
 
@@ -106,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: aiResponse });
   } catch (error) {
-    console.error("Coach error:", error);
+    redactedLog("error", "Coach error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to get coach response" }, { status: 500 });
   }
 }

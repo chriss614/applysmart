@@ -232,7 +232,7 @@ export const userJobMatches = pgTable(
     uniqueIndex("user_job_unique_idx").on(table.userId, table.jobId),
     index("match_score_idx").on(table.matchScore),
     index("user_status_idx").on(table.userId, table.status),
-    index("follow_up_idx").on(table.nextFollowUpAt),
+    index("user_job_matches_follow_up_idx").on(table.nextFollowUpAt),
   ]
 );
 
@@ -324,10 +324,10 @@ export const applications = pgTable(
   },
   (table) => [
     index("user_applications_idx").on(table.userId, table.createdAt),
-    index("status_idx").on(table.status),
-    index("company_idx").on(table.company),
-    index("follow_up_idx").on(table.nextFollowUpAt),
-    index("favorite_idx").on(table.userId, table.isFavorite),
+    index("applications_status_idx").on(table.status),
+    index("applications_company_idx").on(table.company),
+    index("applications_follow_up_idx").on(table.nextFollowUpAt),
+    index("applications_favorite_idx").on(table.userId, table.isFavorite),
   ]
 );
 
@@ -450,7 +450,7 @@ export const payments = pgTable(
   },
   (table) => [
     index("user_payments_idx").on(table.userId, table.createdAt),
-    index("status_idx").on(table.status),
+    index("payments_status_idx").on(table.status),
   ]
 );
 

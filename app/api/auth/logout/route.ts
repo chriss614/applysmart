@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { validateCsrfToken } from "@/lib/security";
+import { validateCsrfToken, hashRefreshToken, redactedLog } from "@/lib/security";
 
 export async function POST(request: NextRequest) {
   if (!validateCsrfToken(request)) {
@@ -11,11 +10,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const refreshToken = request.cookies.get("refresh_token")?.value;
+    const rawRefreshToken = request.cookies.get("refresh_token")?.value;
 
-    if (refreshToken) {
-      // Revoke session
-      await db.update(sessions).set({ revoked: true }).where(eq(sessions.tokenHash, refreshToken));
+    if (rawRefreshToken) {
+      const tokenHash = hashRefreshToken(rawRefreshToken);
+      // Revoke session by hashed token
+      await db.update(sessions)
+        .set({ revoked: true })
+        .where(eq(sessions.tokenHash, tokenHash));
     }
 
     const response = NextResponse.json({ success: true });
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Logout error:", error);
+    redactedLog("error", "Logout error", { error: "Internal server error" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

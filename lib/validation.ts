@@ -26,6 +26,18 @@ export const registerSchema = z.object({
   path: ["confirmPassword"],
 });
 
+export const passwordResetSchema = z.object({
+  token: z.string().min(1, "Reset token is required"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(100)
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Must contain at least one lowercase letter")
+    .regex(/\d/, "Must contain at least one number")
+    .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/, "Must contain at least one special character"),
+}).strict();
+
 //============================================
 // Resume Upload Validation
 //============================================
@@ -41,6 +53,45 @@ export const resumeUploadSchema = z.object({
 });
 
 //============================================
+// AI Output Validation (Zod schemas for AI responses)
+//============================================
+export const resumeAnalysisResultSchema = z.object({
+  atsScore: z.number().min(0).max(100),
+  readabilityScore: z.number().min(0).max(100),
+  keywordDensity: z.record(z.number()),
+  strengths: z.array(z.string()),
+  weaknesses: z.array(z.string()),
+  suggestions: z.array(z.string()),
+  optimizedSummary: z.string(),
+  missingKeywords: z.array(z.string()),
+});
+
+export const interviewQuestionSchema = z.object({
+  id: z.number(),
+  question: z.string(),
+  type: z.enum(["technical", "behavioral", "system_design", "coding"]),
+  difficulty: z.enum(["junior", "mid", "senior", "staff"]),
+  expectedPoints: z.array(z.string()),
+  timeEstimate: z.string(),
+});
+
+export const interviewQuestionsResultSchema = z.object({
+  questions: z.array(interviewQuestionSchema),
+});
+
+export const interviewFeedbackResultSchema = z.object({
+  score: z.number().min(0).max(100),
+  strengths: z.array(z.string()),
+  areasToImprove: z.array(z.string()),
+  modelAnswer: z.string(),
+  followUpQuestions: z.array(z.string()),
+});
+
+export const coachResponseSchema = z.object({
+  response: z.string(),
+});
+
+//============================================
 // Interview Configuration
 //============================================
 export const interviewConfigSchema = z.object({
@@ -48,13 +99,13 @@ export const interviewConfigSchema = z.object({
   difficulty: z.enum(["junior", "mid", "senior", "staff"]),
   questionCount: z.number().min(1).max(10).default(5),
   focusAreas: z.array(z.string()).max(5).optional(),
-});
+}).strict();
 
 export const interviewResponseSchema = z.object({
   sessionId: z.number(),
   questionId: z.number(),
   response: z.string().min(1).max(10000),
-});
+}).strict();
 
 //============================================
 // Job Filter Validation
@@ -69,7 +120,7 @@ export const jobFilterSchema = z.object({
   experienceLevel: z.enum(["junior", "mid", "senior", "staff"]).optional(),
   page: z.number().min(1).default(1),
   limit: z.number().min(1).max(50).default(20),
-});
+}).strict();
 
 //============================================
 // Application Tracker Validation
@@ -81,7 +132,7 @@ export const applicationSchema = z.object({
   salaryRange: z.string().max(100).optional(),
   jobUrl: z.string().url().optional(),
   status: z.enum([
-    "saved", "applied", "phone_screen", "technical", 
+    "saved", "applied", "phone_screen", "technical",
     "onsite", "offer", "rejected", "withdrawn", "ghosted"
   ]).default("applied"),
   dateApplied: z.string().datetime().optional(),
@@ -89,7 +140,7 @@ export const applicationSchema = z.object({
   recruiterName: z.string().max(100).optional(),
   recruiterEmail: z.string().email().optional(),
   tags: z.array(z.string().max(20)).max(10).optional(),
-});
+}).strict();
 
 export const applicationUpdateSchema = z.object({
   status: z.enum([
@@ -103,7 +154,7 @@ export const applicationUpdateSchema = z.object({
   nextFollowUpAt: z.string().datetime().optional(),
   isFavorite: z.boolean().optional(),
   tags: z.array(z.string().max(20)).max(10).optional(),
-});
+}).strict();
 
 //============================================
 // Portfolio Validation
@@ -138,8 +189,8 @@ export const portfolioSchema = z.object({
       github: z.string().url().optional(),
       website: z.string().url().optional(),
     }),
-  }),
-});
+  }).strict(),
+}).strict();
 
 //============================================
 // Coach Message Validation
@@ -151,7 +202,7 @@ export const coachMessageSchema = z.object({
     targetRole: z.string().optional(),
     recentActivity: z.string().optional(),
   }).optional(),
-});
+}).strict();
 
 //============================================
 // Community Post Validation
@@ -160,19 +211,19 @@ export const communityPostSchema = z.object({
   title: z.string().min(5).max(200),
   content: z.string().min(20).max(10000),
   category: z.enum([
-    "resume-review", "interview-prep", "job-search", 
+    "resume-review", "interview-prep", "job-search",
     "career-advice", "salary-negotiation", "networking", "general"
   ]),
   tags: z.array(z.string().max(20)).max(5).optional(),
-});
+}).strict();
 
 export const communityCommentSchema = z.object({
   postId: z.number(),
   content: z.string().min(1).max(2000),
-});
+}).strict();
 
 //============================================
-// User Profile Update
+// User Profile Update (allow-list only, no mass-assignment)
 //============================================
 export const profileUpdateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -181,7 +232,19 @@ export const profileUpdateSchema = z.object({
   preferredLocation: z.string().max(100).optional(),
   salaryExpectation: z.string().max(50).optional(),
   skills: z.array(z.string().max(50)).max(20).optional(),
-});
+}).strict();
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(100)
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Must contain at least one lowercase letter")
+    .regex(/\d/, "Must contain at least one number")
+    .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/, "Must contain at least one special character"),
+}).strict();
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -191,3 +254,5 @@ export type ApplicationInput = z.infer<typeof applicationSchema>;
 export type PortfolioInput = z.infer<typeof portfolioSchema>;
 export type CoachMessageInput = z.infer<typeof coachMessageSchema>;
 export type CommunityPostInput = z.infer<typeof communityPostSchema>;
+export type ResumeAnalysisResult = z.infer<typeof resumeAnalysisResultSchema>;
+export type InterviewFeedbackResult = z.infer<typeof interviewFeedbackResultSchema>;

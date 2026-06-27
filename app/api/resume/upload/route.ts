@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resumes } from "@/lib/db/schema";
-import { verifyAccessToken, validateCsrfToken, validateFileUpload, getClientIdentifier } from "@/lib/security";
+import { validateCsrfToken, validateFileUpload, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { uploadRateLimiter } from "@/lib/rate-limit";
 import crypto from "crypto";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
 
 export async function POST(request: NextRequest) {
   if (!validateCsrfToken(request)) {
@@ -36,21 +30,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const validation = validateFileUpload(file.name, file.size, file.type);
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const validation = validateFileUpload(file.name, file.size, file.type, fileBuffer);
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // In a real implementation, upload to Vercel Blob or S3
-    // For now, simulate with a hash-based URL
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    // Store with a server-generated random key (not trusting fileName)
     const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    const storageKey = crypto.randomUUID();
 
     // Store in database
     const [newResume] = await db.insert(resumes).values({
       userId,
       originalFileName: file.name,
-      fileUrl: `https://storage.applysmart.io/resumes/${fileHash}`,
+      fileUrl: `https://storage.applysmart.io/resumes/${storageKey}`,
       fileSize: file.size,
       mimeType: file.type,
       fileHash,
@@ -66,7 +60,7 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error) {
-    console.error("Upload error:", error);
+    redactedLog("error", "Upload error", { error: "Internal server error" });
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }

@@ -2,16 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId } from "@/lib/auth";
 import { generalRateLimiter } from "@/lib/rate-limit";
-import { getClientIdentifier } from "@/lib/security";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
+import { portfolioSchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -32,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ portfolio: portfolio || null });
   } catch (error) {
-    console.error("Portfolio fetch error:", error);
+    redactedLog("error", "Portfolio fetch error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to fetch portfolio" }, { status: 500 });
   }
 }
@@ -48,7 +42,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { theme, content, isPublished, publicSlug, customDomain } = await request.json();
+    const body = await request.json();
+    const parsed = portfolioSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+    }
+
+    const { theme, content } = parsed.data;
+    const isPublished = body.isPublished ?? false;
+    const publicSlug = body.publicSlug || `portfolio-${userId}`;
+    const customDomain = body.customDomain || null;
 
     const existing = await db.query.portfolios.findFirst({
       where: eq(portfolios.userId, userId),
@@ -57,11 +60,11 @@ export async function POST(request: NextRequest) {
     if (existing) {
       await db.update(portfolios)
         .set({
-          theme: theme || existing.theme,
-          content: content || existing.content,
-          isPublished: isPublished !== undefined ? isPublished : existing.isPublished,
-          publicSlug: publicSlug || existing.publicSlug,
-          customDomain: customDomain || existing.customDomain,
+          theme,
+          content,
+          isPublished,
+          publicSlug,
+          customDomain,
           updatedAt: new Date(),
         })
         .where(eq(portfolios.id, existing.id));
@@ -71,16 +74,16 @@ export async function POST(request: NextRequest) {
 
     const [newPortfolio] = await db.insert(portfolios).values({
       userId,
-      theme: theme || "modern",
-      content: content || {},
-      isPublished: isPublished || false,
-      publicSlug: publicSlug || `portfolio-${userId}`,
+      theme,
+      content,
+      isPublished,
+      publicSlug,
       customDomain,
     }).returning();
 
     return NextResponse.json({ success: true, portfolio: newPortfolio }, { status: 201 });
   } catch (error) {
-    console.error("Portfolio save error:", error);
+    redactedLog("error", "Portfolio save error", { error: "Internal server error" });
     return NextResponse.json({ error: "Failed to save portfolio" }, { status: 500 });
   }
 }

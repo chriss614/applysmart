@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifyAccessToken, generateCsrfToken } from "@/lib/security";
+import { verifyAccessToken } from "@/lib/security";
 
 //============================================
 // Route Configuration
@@ -45,11 +45,9 @@ const SECURITY_HEADERS = {
   "X-DNS-Prefetch-Control": "on",
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
-  "X-XSS-Protection": "1; mode=block",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), magnetometer=(), gyroscope=()",
   "Cross-Origin-Embedder-Policy": "require-corp",
-  "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
 };
 
@@ -62,7 +60,15 @@ const HSTS_HEADER = {
 //============================================
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const response = NextResponse.next();
+
+  // Strip any incoming x-user-* headers from client to prevent spoofing
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-user-id");
+  requestHeaders.delete("x-user-email");
+  requestHeaders.delete("x-user-role");
+  requestHeaders.delete("x-user-plan");
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
 
   // Apply security headers to all responses
   Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
@@ -83,7 +89,7 @@ export async function middleware(request: NextRequest) {
 
   // Generate CSRF token for non-API requests
   if (!pathname.startsWith("/api/")) {
-    const csrfToken = request.cookies.get("csrf-token")?.value || generateCsrfToken();
+    const csrfToken = request.cookies.get("csrf-token")?.value || crypto.randomUUID();
     response.cookies.set("csrf-token", csrfToken, {
       httpOnly: false, // Must be accessible by JS
       secure: process.env.NODE_ENV === "production",
@@ -113,11 +119,6 @@ export async function middleware(request: NextRequest) {
     if (payload) {
       isAuthenticated = true;
       userPayload = payload;
-      // Add user context to headers for downstream use
-      response.headers.set("x-user-id", String(payload.userId));
-      response.headers.set("x-user-email", payload.email);
-      response.headers.set("x-user-role", payload.role);
-      response.headers.set("x-user-plan", payload.plan);
     }
   }
 
@@ -138,7 +139,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard/overview", request.url));
   }
 
-  // Check plan access for premium features (database-driven)
+  // Check plan access for premium features
   const PREMIUM_ROUTES = ["/dashboard/coach", "/dashboard/analytics", "/dashboard/portfolio"];
   if (PREMIUM_ROUTES.some((route) => pathname.includes(route))) {
     if (userPayload && userPayload.plan === "free") {

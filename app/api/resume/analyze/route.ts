@@ -2,24 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resumes, cachedAnalyses } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { verifyAccessToken, validateCsrfToken, getClientIdentifier } from "@/lib/security";
+import { validateCsrfToken, getClientIdentifier, redactedLog } from "@/lib/security";
+import { getUserId, getUserPlan } from "@/lib/auth";
 import { aiRateLimiter } from "@/lib/rate-limit";
-import { safeAiCall, RESUME_ANALYSIS_PROMPT } from "@/lib/ai/openai";
+import { safeAiCallWithValidation, RESUME_ANALYSIS_PROMPT } from "@/lib/ai/openai";
+import { resumeAnalysisResultSchema } from "@/lib/validation";
 import crypto from "crypto";
-
-async function getUserId(request: NextRequest): Promise<number | null> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return null;
-  const payload = await verifyAccessToken(token);
-  return payload?.userId || null;
-}
-
-async function getUserPlan(request: NextRequest): Promise<string> {
-  const token = request.cookies.get("token")?.value;
-  if (!token) return "free";
-  const payload = await verifyAccessToken(token);
-  return payload?.plan || "free";
-}
 
 export async function POST(request: NextRequest) {
   if (!validateCsrfToken(request)) {
@@ -34,7 +22,6 @@ export async function POST(request: NextRequest) {
   const plan = await getUserPlan(request);
   const identifier = getClientIdentifier(request);
 
-  // Check AI rate limit based on plan
   const limiter = aiRateLimiter[plan as keyof typeof aiRateLimiter] || aiRateLimiter.free;
   const { success: rateLimitSuccess } = await limiter.limit(String(userId));
   if (!rateLimitSuccess) {
@@ -47,9 +34,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Resume text too short" }, { status: 400 });
     }
 
-    // Check cache
+    // Check cache — but first verify ownership of the resume
     const promptHash = crypto.createHash("sha256").update(resumeText + "ats_v2").digest("hex");
     if (resumeId) {
+      // Verify the resume belongs to the current user (IDOR fix)
+      const resume = await db.query.resumes.findFirst({
+        where: and(eq(resumes.id, resumeId), eq(resumes.userId, userId)),
+      });
+      if (!resume) {
+        return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+      }
+
       const cached = await db.query.cachedAnalyses.findFirst({
         where: and(
           eq(cachedAnalyses.resumeId, resumeId),
@@ -62,36 +57,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Call AI
-    const result = await safeAiCall<{
-      atsScore: number;
-      readabilityScore: number;
-      keywordDensity: Record<string, number>;
-      strengths: string[];
-      weaknesses: string[];
-      suggestions: string[];
-      optimizedSummary: string;
-      missingKeywords: string[];
-    }>(RESUME_ANALYSIS_PROMPT, resumeText);
+    // Call AI with Zod validation
+    const result = await safeAiCallWithValidation(
+      RESUME_ANALYSIS_PROMPT,
+      resumeText,
+      resumeAnalysisResultSchema
+    );
 
     if (!result) {
       return NextResponse.json({ error: "AI analysis failed. Please try again." }, { status: 503 });
     }
 
-    // Cache result
+    // Cache result (only if resumeId provided and ownership verified)
     if (resumeId) {
       await db.insert(cachedAnalyses).values({
         resumeId,
         analysisType: "ats",
         result,
         promptHash,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       }).catch(() => {}); // Ignore duplicate cache errors
     }
 
     return NextResponse.json({ success: true, result, cached: false });
   } catch (error) {
-    console.error("Resume analysis error:", error);
+    redactedLog("error", "Resume analysis error", { error: "Internal server error" });
     return NextResponse.json({ error: "Analysis failed" }, { status: 500 });
   }
 }

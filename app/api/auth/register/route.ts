@@ -1,30 +1,30 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, sessions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import {
   hashPassword,
   createAccessToken,
-  createRefreshToken,
+  hashRefreshToken,
   COOKIE_OPTIONS,
   REFRESH_COOKIE_OPTIONS,
   validateCsrfToken,
   getClientIdentifier,
+  redactedLog,
 } from "@/lib/security";
-import { registerSchema } from "@/lib/validation";
 import { authRateLimiter } from "@/lib/rate-limit";
+import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
-  // Rate limiting
+  // Rate limit
   const identifier = getClientIdentifier(request);
   const { success: rateLimitSuccess } = await authRateLimiter.limit(identifier);
   if (!rateLimitSuccess) {
-    return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  // CSRF validation
   if (!validateCsrfToken(request)) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
@@ -33,24 +33,29 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+      return NextResponse.json(
+        { error: parsed.error.errors[0].message },
+        { status: 400 }
+      );
     }
 
     const { name, email, password } = parsed.data;
 
-    // Check if user exists
     const existingUser = await db.query.users.findFirst({
       where: eq(users.email, email.toLowerCase()),
     });
 
     if (existingUser) {
-      return NextResponse.json({ error: "Email already registered" }, { status: 409 });
+      // Return generic success to prevent email enumeration
+      // (same response as success, but don't create user)
+      return NextResponse.json(
+        { success: true, message: "If this email is not registered, an account has been created." },
+        { status: 200 }
+      );
     }
 
-    // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Create user
     const [newUser] = await db.insert(users).values({
       email: email.toLowerCase(),
       passwordHash,
@@ -58,7 +63,6 @@ export async function POST(request: NextRequest) {
       emailVerified: false,
     }).returning();
 
-    // Create tokens
     const accessToken = await createAccessToken({
       userId: newUser.id,
       email: newUser.email,
@@ -66,20 +70,19 @@ export async function POST(request: NextRequest) {
       plan: newUser.plan,
     });
 
-    const refreshToken = await createRefreshToken(newUser.id);
+    const rawRefreshToken = crypto.randomBytes(64).toString("hex");
+    const refreshTokenHash = hashRefreshToken(rawRefreshToken);
 
-    // Store session
-    const { sessions } = await import("@/lib/db/schema");
     await db.insert(sessions).values({
       userId: newUser.id,
-      tokenHash: refreshToken,
+      tokenHash: refreshTokenHash,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       userAgent: request.headers.get("user-agent") || "",
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "",
     });
 
-    // Send welcome email (non-blocking)
-    sendWelcomeEmail(newUser.email, newUser.name || "there").catch(console.error);
+    // Send welcome email asynchronously (don't block response)
+    sendWelcomeEmail(newUser.email, newUser.name || "there").catch(() => {});
 
     const response = NextResponse.json({
       success: true,
@@ -90,14 +93,14 @@ export async function POST(request: NextRequest) {
         plan: newUser.plan,
         role: newUser.role,
       },
-    });
+    }, { status: 201 });
 
     response.cookies.set("token", accessToken, COOKIE_OPTIONS);
-    response.cookies.set("refresh_token", refreshToken, REFRESH_COOKIE_OPTIONS);
+    response.cookies.set("refresh_token", rawRefreshToken, REFRESH_COOKIE_OPTIONS);
 
     return response;
   } catch (error) {
-    console.error("Registration error:", error);
+    redactedLog("error", "Registration error", { error: "Internal server error" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

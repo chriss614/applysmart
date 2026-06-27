@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { validateCsrfToken, getClientIdentifier } from "@/lib/security";
-import { authRateLimiter } from "@/lib/rate-limit";
+import {
+  generatePasswordResetToken,
+  hashPasswordResetToken,
+  validateCsrfToken,
+  getClientIdentifier,
+  redactedLog,
+} from "@/lib/security";
+import { authRateLimiter, passwordResetRateLimiter } from "@/lib/rate-limit";
 import { sendPasswordResetEmail } from "@/lib/email";
-import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
+  // Rate limit
   const identifier = getClientIdentifier(request);
   const { success: rateLimitSuccess } = await authRateLimiter.limit(identifier);
   if (!rateLimitSuccess) {
@@ -20,39 +26,43 @@ export async function POST(request: NextRequest) {
 
   try {
     const { email } = await request.json();
-    if (!email || !email.includes("@")) {
-      return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+    if (!email || typeof email !== "string") {
+      return NextResponse.json({ error: "Email required" }, { status: 400 });
     }
 
     const user = await db.query.users.findFirst({
       where: eq(users.email, email.toLowerCase()),
     });
 
-    // Always return success to prevent email enumeration
-    if (!user) {
-      return NextResponse.json({ success: true, message: "If an account exists, a reset email has been sent." });
+    // Always return the same message regardless of whether the email exists
+    // This prevents email enumeration via timing or response content
+
+    if (user) {
+      // Generate reset token and store hash
+      const rawToken = generatePasswordResetToken();
+      const tokenHash = hashPasswordResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await db.update(users)
+        .set({
+          passwordResetToken: tokenHash,
+          passwordResetExpires: expiresAt,
+        })
+        .where(eq(users.id, user.id));
+
+      // Send email asynchronously (don't block response)
+      sendPasswordResetEmail(user.email, rawToken).catch(() => {});
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
-    const resetExpires = new Date(Date.now() + 3600000); // 1 hour
+    // Consistent delay to prevent timing attacks (always ~200ms)
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // Store reset token hash
-    await db.update(users)
-      .set({
-        passwordResetToken: resetTokenHash,
-        passwordResetExpires: resetExpires,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, user.id));
-
-    // Send email
-    await sendPasswordResetEmail(user.email, resetToken);
-
-    return NextResponse.json({ success: true, message: "If an account exists, a reset email has been sent." });
+    return NextResponse.json({
+      success: true,
+      message: "If an account exists with this email, a password reset link has been sent.",
+    });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    redactedLog("error", "Forgot password error", { error: "Internal server error" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
